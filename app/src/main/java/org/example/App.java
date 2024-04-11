@@ -3,24 +3,16 @@
  */
 package org.example;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
-import java.net.DatagramSocket;
-import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.Security;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.Stack;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.util.encoders.Hex;
-import org.slf4j.Logger;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -43,19 +35,23 @@ public class App {
       var input = client.getInputStream();
 
       var passwords = getPasswords("123 123123 ");
-      byte[] recieved_password = input.readNBytes(16);
-      byte[] expected_password = passwords[passwords.length-1];
 
-      log.info("Ожидается пароль: {}", Hex.toHexString(expected_password));
-      log.info("Получен пароль: {}", Hex.toHexString(recieved_password));
-      
+      while (true) {
+        byte[] recieved_password = new byte[16];
+        int readed = input.read(recieved_password, 0, 16);
+        if(readed < 16)
+          return;
+        byte[] expected_password = passwords.pop();
 
-      boolean equals = Hex.toHexString(expected_password).equals(Hex.toHexString(recieved_password));
-      if(equals)
-        log.info("Пароль подтвержден");
-      else
-        log.error("Пароль не совпал");
+        log.info("Ожидается пароль: {}", Hex.toHexString(expected_password));
+        log.info("Получен пароль: {}", Hex.toHexString(recieved_password));
 
+        boolean equals = Hex.toHexString(expected_password).equals(Hex.toHexString(recieved_password));
+        if (equals)
+          log.info("Пароль подтвержден");
+        else
+          log.error("Пароль не совпал");
+      }
     } catch (Exception e) {
 
       log.info("Клиент запущен");
@@ -64,32 +60,35 @@ public class App {
       var out = server.getOutputStream();
       log.info("Соединение с сервером установлено");
 
-
       var passwords = getPasswords("123 123123 ");
-      var lastpass = passwords[passwords.length - 1];
+
+      var lastpass = passwords.pop();
       log.info("Отправка одноразового пароля: {}", Hex.toHexString(lastpass));
       out.write(lastpass);
+      log.info("Одноразовых паролей осталось: {}", passwords.size());
 
       server.close();
-      ;
+
     }
 
     log.info("Успешно прочитано!");
 
   }
 
-  static byte[][] getPasswords(String mainPassword) throws NoSuchAlgorithmException {
+  static Stack<byte[]> getPasswords(String mainPassword) throws NoSuchAlgorithmException {
 
     MessageDigest crypt = MessageDigest.getInstance("MD2");
+    Stack<byte[]> passwords = new Stack<>();
     log.info("Создание 10 одноразовых паролей");
-    byte[][] oneTimePasswords = new byte[10][];
-    oneTimePasswords[0] = crypt.digest(mainPassword.getBytes());
+
+    passwords.push(crypt.digest(mainPassword.getBytes()));
+
     for (int i = 1; i < 10; i++) {
-      oneTimePasswords[i] = crypt.digest(oneTimePasswords[i - 1]);
-      log.debug("Одноразовый пароль {} = {}", i, Hex.toHexString(oneTimePasswords[i]));
+      passwords.push(crypt.digest(passwords.peek()));
+      log.debug("Одноразовый пароль {} = {}", i, Hex.toHexString(passwords.peek()));
     }
 
-    return oneTimePasswords;
+    return passwords;
   }
 
 }
